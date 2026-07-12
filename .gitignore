@@ -1,0 +1,21 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code local settings
+.claude/
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# Dependencies (none expected in this project, but guard against accidents)
+node_modules/

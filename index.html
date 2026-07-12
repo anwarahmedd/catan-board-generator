@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Catan Board Generator</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #1b1f24;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    margin: 0;
+  }
+
+  h1 {
+    margin: 0 0 1rem;
+    font-size: 1.5rem;
+  }
+
+  button {
+    padding: 0.6rem 1.3rem;
+    font-size: 1rem;
+    border: none;
+    border-radius: 6px;
+    background: #3d7a4a;
+    color: white;
+    cursor: pointer;
+    margin-bottom: 1.5rem;
+  }
+
+  button:hover {
+    background: #4a9058;
+  }
+
+  #board-container {
+    width: 100%;
+    max-width: 720px;
+  }
+
+  #board {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<h1>Settlers of Catan &mdash; Random Board</h1>
+<button id="generate-btn">Generate new board</button>
+<div id="board-container">
+  <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<script>
+  // ---- Editable board data ----------------------------------------------
+
+  // 19 tiles: 4 wood, 4 sheep, 4 wheat, 3 brick, 3 ore, 1 desert
+  const TILE_RESOURCES = [
+    'wood', 'wood', 'wood', 'wood',
+    'sheep', 'sheep', 'sheep', 'sheep',
+    'wheat', 'wheat', 'wheat', 'wheat',
+    'brick', 'brick', 'brick',
+    'ore', 'ore', 'ore',
+    'desert'
+  ];
+
+  // 18 number tokens: one 2, one 12, two each of 3,4,5,6,8,9,10,11
+  const NUMBER_TOKENS = [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12];
+
+  const RESOURCE_COLORS = {
+    wood: '#2f6b3a',
+    sheep: '#8bc34a',
+    wheat: '#f2c14e',
+    brick: '#c1502e',
+    ore: '#8d8f96',
+    desert: '#e0c88c'
+  };
+
+  const HEX_SIZE = 60; // circumradius of each hex tile, in SVG units
+
+  // Max allowed gap (in pips) between the highest- and lowest-pip resource.
+  // Lower = more balanced boards but harder to satisfy. Tune to taste.
+  const MAX_PIP_GAP = 6;
+
+  // Mirror-line fairness: max allowed pip difference between the two halves
+  // on ANY of the three mirror axes. Set to clip only the extreme tail
+  // (~3% of boards) while preserving variety. Re-tune via debugMirrorSpread().
+  const MAX_HALF_PIP_DIFF = 14;
+
+  // Settlement-spot fairness: max allowed pip sum at any interior corner
+  // (three mutually-adjacent tiles). 12 forbids the strongest 13-pip spots.
+  const MAX_SETTLEMENT_PIPS = 12;
+
+  // Resource clustering: max allowed size of a single-resource connected blob
+  // (desert excluded). 3 rejects boards where any resource is fully connected
+  // (a 4-blob). Tunable; re-check the spread via debugResourceClusterSpread().
+  const MAX_RESOURCE_BLOB = 3;
+
+  // ---- Hex grid layout ---------------------------------------------------
+
+  // Axial coordinates for a hexagon-shaped board of radius 2.
+  // Grouping these by `r` produces rows of 3, 4, 5, 4, 3 tiles (19 total),
+  // matching the standard Catan board shape.
+  function generateAxialCoords(radius) {
+    const coords = [];
+    for (let q = -radius; q <= radius; q++) {
+      const rMin = Math.max(-radius, -q - radius);
+      const rMax = Math.min(radius, -q + radius);
+      for (let r = rMin; r <= rMax; r++) {
+        coords.push({ q, r });
+      }
+    }
+    return coords;
+  }
+
+  const AXIAL_COORDS = generateAxialCoords(2);
+
+  // Pointy-top axial-to-pixel conversion.
+  function axialToPixel(q, r, size) {
+    const x = size * Math.sqrt(3) * (q + r / 2);
+    const y = size * 1.5 * r;
+    return { x, y };
+  }
+
+  // Vertices of a pointy-top hexagon centered at (cx, cy).
+  function hexPolygonPoints(cx, cy, size) {
+    const points = [];
+    for (let i = 0; i < 6; i++) {
+      const angleDeg = 60 * i - 30;
+      const angleRad = (Math.PI / 180) * angleDeg;
+      const x = cx + size * Math.cos(angleRad);
+      const y = cy + size * Math.sin(angleRad);
+      points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+    return points.join(' ');
+  }
+
+  // ---- Board generation ---------------------------------------------------
+
+  function shuffle(array) {
+    const copy = array.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  function buildBoard() {
+    const resources = shuffle(TILE_RESOURCES);
+    const numbers = shuffle(NUMBER_TOKENS);
+    let numberIndex = 0;
+
+    return AXIAL_COORDS.map(({ q, r }, i) => {
+      const resource = resources[i];
+      const number = resource === 'desert' ? null : numbers[numberIndex++];
+      return { q, r, resource, number };
+    });
+  }
+
+  // ---- Adjacency ---------------------------------------------------------
+
+  // Two hexes are neighbors when their axial distance is exactly 1.
+  function axialDistance(a, b) {
+    return (
+      Math.abs(a.q - b.q) +
+      Math.abs(a.r - b.r) +
+      Math.abs((a.q + a.r) - (b.q + b.r))
+    ) / 2;
+  }
+
+  // Precompute neighbor indices for each tile position (indices into AXIAL_COORDS).
+  const ADJACENCY = AXIAL_COORDS.map((tile, i) =>
+    AXIAL_COORDS.reduce((neighbors, other, j) => {
+      if (i !== j && axialDistance(tile, other) === 1) neighbors.push(j);
+      return neighbors;
+    }, [])
+  );
+
+  // ---- Board validation --------------------------------------------------
+
+  // A "red" (high-probability) token is a 6 or an 8.
+  function isRedNumber(number) {
+    return number === 6 || number === 8;
+  }
+
+  // Rule: no two red number tokens may sit on adjacent tiles.
+  function ruleNoAdjacentReds(tiles) {
+    for (let i = 0; i < tiles.length; i++) {
+      if (!isRedNumber(tiles[i].number)) continue;
+      for (const j of ADJACENCY[i]) {
+        if (j > i && isRedNumber(tiles[j].number)) return false;
+      }
+    }
+    return true;
+  }
+
+  // Rule: no two tiles with the same number token may be adjacent.
+  // Desert tiles (number === null) have no token and are exempt.
+  function ruleNoAdjacentSameNumber(tiles) {
+    for (let i = 0; i < tiles.length; i++) {
+      if (tiles[i].number === null) continue;
+      for (const j of ADJACENCY[i]) {
+        if (j > i && tiles[j].number === tiles[i].number) return false;
+      }
+    }
+    return true;
+  }
+
+  // Pip value of a number token = its number of dots in Catan
+  // (how likely it is to be rolled). Desert has no token.
+  const PIP_VALUES = {
+    2: 1, 12: 1,
+    3: 2, 11: 2,
+    4: 3, 10: 3,
+    5: 4, 9: 4,
+    6: 5, 8: 5,
+  };
+
+  // Rule: resource pip balance. Sum each resource's pips across its tiles;
+  // reject if the highest-pip resource exceeds the lowest by more than
+  // MAX_PIP_GAP. Desert produces nothing and is excluded.
+  function ruleResourcePipBalance(tiles) {
+    const pipsByResource = {};
+    for (const tile of tiles) {
+      if (tile.resource === 'desert') continue;
+      pipsByResource[tile.resource] =
+        (pipsByResource[tile.resource] || 0) + PIP_VALUES[tile.number];
+    }
+    const totals = Object.values(pipsByResource);
+    return Math.max(...totals) - Math.min(...totals) <= MAX_PIP_GAP;
+  }
+
+  // ---- Mirror-line pip balance (Option A: true edge-to-edge mirror axes) --
+
+  // Each mirror axis splits the 19 positions into two equal halves of 8 tiles.
+  // Three tiles lie ON each axis (center + 2); they are self-mirroring and so
+  // excluded from that axis's comparison. Splits are positional and fixed:
+  // every half always holds exactly 8 positions, and the desert contributes
+  // 0 pips wherever it lands, so tile counts never drift.
+  const MIRROR_SPLITS = [
+    { // Axis A - vertical |
+      a: [[0,-2],[-1,-1],[0,-1],[-2,0],[-1,0],[-2,1],[-1,1],[-2,2]],
+      b: [[2,-2],[1,-1],[2,-1],[1,0],[2,0],[0,1],[1,1],[0,2]],
+    },
+    { // Axis B - diagonal /
+      a: [[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1],[-2,0],[-1,0]],
+      b: [[1,0],[2,0],[-1,1],[0,1],[1,1],[-2,2],[-1,2],[0,2]],
+    },
+    { // Axis C - diagonal \
+      a: [[0,-2],[1,-2],[2,-2],[0,-1],[1,-1],[2,-1],[1,0],[2,0]],
+      b: [[-2,0],[-1,0],[-2,1],[-1,1],[0,1],[-2,2],[-1,2],[0,2]],
+    },
+  ];
+
+  // Resolve each split's [q,r] pairs to tile indices (into AXIAL_COORDS) once.
+  const coordIndex = new Map(AXIAL_COORDS.map((c, i) => [`${c.q},${c.r}`, i]));
+  const MIRROR_SPLIT_INDICES = MIRROR_SPLITS.map(split => ({
+    a: split.a.map(([q, r]) => coordIndex.get(`${q},${r}`)),
+    b: split.b.map(([q, r]) => coordIndex.get(`${q},${r}`)),
+  }));
+
+  function pipOf(tile) {
+    return tile.number === null ? 0 : PIP_VALUES[tile.number];
+  }
+
+  // Largest absolute half-pip difference across the three mirror axes.
+  function largestHalfPipDiff(tiles) {
+    let largest = 0;
+    for (const split of MIRROR_SPLIT_INDICES) {
+      const sumA = split.a.reduce((s, i) => s + pipOf(tiles[i]), 0);
+      const sumB = split.b.reduce((s, i) => s + pipOf(tiles[i]), 0);
+      largest = Math.max(largest, Math.abs(sumA - sumB));
+    }
+    return largest;
+  }
+
+  // Rule: reject only boards whose worst mirror-half imbalance exceeds the cap.
+  function ruleMirrorLinePipBalance(tiles) {
+    return largestHalfPipDiff(tiles) <= MAX_HALF_PIP_DIFF;
+  }
+
+  // ---- Settlement-spot pip balance ---------------------------------------
+
+  // An interior settlement corner is a set of 3 mutually-adjacent tiles.
+  // Derive all of them from the existing ADJACENCY map (each counted once,
+  // i<j<k). On a standard 19-tile board this yields 24 corners.
+  const SETTLEMENT_CORNERS = (() => {
+    const corners = [];
+    for (let i = 0; i < ADJACENCY.length; i++) {
+      for (const j of ADJACENCY[i]) {
+        if (j <= i) continue;
+        for (const k of ADJACENCY[j]) {
+          if (k <= j) continue;
+          if (ADJACENCY[i].includes(k)) corners.push([i, j, k]);
+        }
+      }
+    }
+    return corners;
+  })();
+
+  // Rule: reject if any corner's three-tile pip sum exceeds the cap.
+  // Desert contributes 0 pips via pipOf. Cap 12 forbids 13-pip spots.
+  function ruleNoStrongSettlementSpot(tiles) {
+    for (const [i, j, k] of SETTLEMENT_CORNERS) {
+      if (pipOf(tiles[i]) + pipOf(tiles[j]) + pipOf(tiles[k]) > MAX_SETTLEMENT_PIPS) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // ---- Resource clustering -----------------------------------------------
+
+  // Count edge-adjacent tile pairs sharing the same resource (desert excluded).
+  // Used by the debug readout (total-count metric).
+  function countSameResourcePairs(tiles) {
+    let count = 0;
+    for (let i = 0; i < tiles.length; i++) {
+      if (tiles[i].resource === 'desert') continue;
+      for (const j of ADJACENCY[i]) {
+        if (j > i && tiles[j].resource === tiles[i].resource) count++;
+      }
+    }
+    return count;
+  }
+
+  // Size of the biggest connected same-resource component (desert excluded),
+  // via flood-fill over ADJACENCY.
+  function largestResourceCluster(tiles) {
+    const seen = new Array(tiles.length).fill(false);
+    let largest = 0;
+    for (let start = 0; start < tiles.length; start++) {
+      if (seen[start] || tiles[start].resource === 'desert') continue;
+      const res = tiles[start].resource;
+      let size = 0;
+      const stack = [start];
+      seen[start] = true;
+      while (stack.length) {
+        const i = stack.pop();
+        size++;
+        for (const j of ADJACENCY[i]) {
+          if (!seen[j] && tiles[j].resource === res) {
+            seen[j] = true;
+            stack.push(j);
+          }
+        }
+      }
+      largest = Math.max(largest, size);
+    }
+    return largest;
+  }
+
+  // Rule: reject boards where any single resource forms a fully-connected blob.
+  // Loose by design — mild clustering (blobs up to MAX_RESOURCE_BLOB) is kept;
+  // this only kills the "whole resource lumped together" case.
+  function ruleNoFullResourceBlob(tiles) {
+    return largestResourceCluster(tiles) <= MAX_RESOURCE_BLOB;
+  }
+
+  // All active rules. Add more rule functions here as they're written.
+  const BOARD_RULES = [
+    ruleNoAdjacentReds,
+    ruleNoAdjacentSameNumber,
+    ruleResourcePipBalance,
+    ruleMirrorLinePipBalance,
+    ruleNoStrongSettlementSpot,
+    ruleNoFullResourceBlob,
+  ];
+
+  function isValidBoard(tiles) {
+    return BOARD_RULES.every(rule => rule(tiles));
+  }
+
+  const MAX_GENERATION_ATTEMPTS = 5000;
+
+  // Rejection sampling: keep generating until a board passes every rule,
+  // falling back to the last attempt if the cap is reached.
+  function generateValidBoard() {
+    let board;
+    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+      board = buildBoard();
+      if (isValidBoard(board)) return board;
+    }
+    console.warn(
+      `No valid board found in ${MAX_GENERATION_ATTEMPTS} attempts; rendering last board.`
+    );
+    return board;
+  }
+
+  // ---- Rendering ---------------------------------------------------------
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function renderBoard(tiles) {
+    const svg = document.getElementById('board');
+    svg.innerHTML = '';
+
+    const positioned = tiles.map(tile => {
+      const { x, y } = axialToPixel(tile.q, tile.r, HEX_SIZE);
+      return { ...tile, x, y };
+    });
+
+    const xs = positioned.map(t => t.x);
+    const ys = positioned.map(t => t.y);
+    const padding = HEX_SIZE * 1.2;
+    const minX = Math.min(...xs) - padding;
+    const maxX = Math.max(...xs) + padding;
+    const minY = Math.min(...ys) - padding;
+    const maxY = Math.max(...ys) + padding;
+
+    svg.setAttribute('viewBox', `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
+
+    positioned.forEach(tile => {
+      const group = document.createElementNS(SVG_NS, 'g');
+
+      const hex = document.createElementNS(SVG_NS, 'polygon');
+      hex.setAttribute('points', hexPolygonPoints(tile.x, tile.y, HEX_SIZE));
+      hex.setAttribute('fill', RESOURCE_COLORS[tile.resource]);
+      hex.setAttribute('stroke', '#2b2b2b');
+      hex.setAttribute('stroke-width', '2');
+      group.appendChild(hex);
+
+      if (tile.resource === 'desert') {
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('x', tile.x);
+        label.setAttribute('y', tile.y);
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('dominant-baseline', 'middle');
+        label.setAttribute('font-size', HEX_SIZE * 0.26);
+        label.setAttribute('font-weight', 'bold');
+        label.setAttribute('fill', '#5a4b32');
+        label.textContent = 'DESERT';
+        group.appendChild(label);
+      } else {
+        const tokenRadius = HEX_SIZE * 0.36;
+
+        const circle = document.createElementNS(SVG_NS, 'circle');
+        circle.setAttribute('cx', tile.x);
+        circle.setAttribute('cy', tile.y);
+        circle.setAttribute('r', tokenRadius);
+        circle.setAttribute('fill', '#f5ecd7');
+        circle.setAttribute('stroke', '#2b2b2b');
+        circle.setAttribute('stroke-width', '1.5');
+        group.appendChild(circle);
+
+        const isHot = tile.number === 6 || tile.number === 8;
+
+        const numberText = document.createElementNS(SVG_NS, 'text');
+        numberText.setAttribute('x', tile.x);
+        numberText.setAttribute('y', tile.y);
+        numberText.setAttribute('text-anchor', 'middle');
+        numberText.setAttribute('dominant-baseline', 'middle');
+        numberText.setAttribute('font-size', HEX_SIZE * 0.42);
+        numberText.setAttribute('font-weight', 'bold');
+        numberText.setAttribute('fill', isHot ? '#c62828' : '#1a1a1a');
+        numberText.textContent = tile.number;
+        group.appendChild(numberText);
+      }
+
+      svg.appendChild(group);
+    });
+  }
+
+  function generateAndRender() {
+    renderBoard(generateValidBoard());
+  }
+
+  // ---- Dev/debug: spread of the largest mirror-half pip difference --------
+  // Prints min/max/mean and a histogram over a batch of RAW boards so
+  // MAX_HALF_PIP_DIFF can be tuned from real data. Set to false to silence.
+  // Re-run any time from the console with: debugMirrorSpread(1000)
+  const DEBUG_MIRROR_SPREAD = false;
+  const DEBUG_SAMPLE_SIZE = 500;
+
+  function debugMirrorSpread(n = DEBUG_SAMPLE_SIZE) {
+    const values = [];
+    for (let k = 0; k < n; k++) values.push(largestHalfPipDiff(buildBoard()));
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const mean = values.reduce((a, b) => a + b, 0) / n;
+
+    const hist = {};
+    for (const v of values) hist[v] = (hist[v] || 0) + 1;
+
+    let bars = '', cum = '', running = 0;
+    for (let v = min; v <= max; v++) {
+      const count = hist[v] || 0;
+      const pct = (count / n) * 100;
+      bars += `  ${String(v).padStart(2)} | ${'#'.repeat(Math.round(pct / 2))} ${count} (${pct.toFixed(1)}%)\n`;
+      running += count;
+      const keep = (running / n) * 100;
+      cum += `  diff <= ${String(v).padStart(2)}:  keep ${keep.toFixed(1)}%  /  reject ${(100 - keep).toFixed(1)}%\n`;
+    }
+
+    console.log(
+      `[mirror-spread] n=${n} raw boards | largest-of-3 half-pip diff\n` +
+      `  min=${min}  max=${max}  mean=${mean.toFixed(2)}\n` +
+      `distribution:\n${bars}` +
+      `cumulative (choose MAX_HALF_PIP_DIFF to clip the tail):\n${cum}`
+    );
+    return { min, max, mean, hist };
+  }
+  window.debugMirrorSpread = debugMirrorSpread; // reachable from the console
+
+  // ---- Dev/debug: resource-clustering spread ------------------------------
+  // Prints TWO metrics over a batch of RAW boards so MAX_RESOURCE_CLUSTERS can
+  // be tuned, and so you can compare a total-count cap vs a per-resource blob:
+  //   (1) total same-resource edge-adjacent pairs per board
+  //   (2) largest single-resource connected cluster (blob) per board
+  // Set to false to silence. Re-run from console: debugResourceClusterSpread(1000)
+  const DEBUG_RESOURCE_CLUSTER = false;
+
+  function summarize(label, values, n) {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const mean = values.reduce((a, b) => a + b, 0) / n;
+    const hist = {};
+    for (const v of values) hist[v] = (hist[v] || 0) + 1;
+    let bars = '', cum = '', running = 0;
+    for (let v = min; v <= max; v++) {
+      const c = hist[v] || 0;
+      const pct = (c / n) * 100;
+      bars += `  ${String(v).padStart(2)} | ${'#'.repeat(Math.round(pct / 2))} ${c} (${pct.toFixed(1)}%)\n`;
+      running += c;
+      cum += `  <= ${String(v).padStart(2)}:  keep ${(running / n * 100).toFixed(1)}%  /  reject ${(100 - running / n * 100).toFixed(1)}%\n`;
+    }
+    return `${label}\n  min=${min}  max=${max}  mean=${mean.toFixed(2)}\ndistribution:\n${bars}cumulative:\n${cum}`;
+  }
+
+  function debugResourceClusterSpread(n = 500) {
+    const totals = [], blobs = [];
+    for (let k = 0; k < n; k++) {
+      const b = buildBoard();
+      totals.push(countSameResourcePairs(b));
+      blobs.push(largestResourceCluster(b));
+    }
+    console.log(
+      `[resource-cluster] n=${n} raw boards\n\n` +
+      summarize('(1) total same-resource adjacent pairs  [MAX_RESOURCE_CLUSTERS caps this]', totals, n) +
+      `\n` +
+      summarize('(2) largest single-resource blob (connected tiles of one resource)', blobs, n)
+    );
+    return { totals, blobs };
+  }
+  window.debugResourceClusterSpread = debugResourceClusterSpread;
+
+  document.getElementById('generate-btn').addEventListener('click', generateAndRender);
+
+  if (DEBUG_MIRROR_SPREAD) debugMirrorSpread();
+  if (DEBUG_RESOURCE_CLUSTER) debugResourceClusterSpread();
+  generateAndRender();
+</script>
+
+</body>
+</html>
