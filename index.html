@@ -80,6 +80,28 @@
     desert: '#e0c88c'
   };
 
+  // 9 fixed harbor (port) positions around the coastline. Each sits on one
+  // sea-facing hex edge, given by its anchor tile [q,r] and edge direction;
+  // that edge's two endpoints are the settlement corners the port connects to.
+  const PORT_POSITIONS = [
+    { tile: [0, -2],  edge: 'NW' },
+    { tile: [1, -2],  edge: 'NE' },
+    { tile: [2, -2],  edge: 'E'  },
+    { tile: [2, 0],   edge: 'E'  },
+    { tile: [1, 1],   edge: 'SE' },
+    { tile: [0, 2],   edge: 'SE' },
+    { tile: [-2, 2],  edge: 'SW' },
+    { tile: [-2, 1],  edge: 'W'  },
+    { tile: [-2, 0],  edge: 'NW' },
+  ];
+
+  // 9 port types: 4 generic 3:1, plus one 2:1 per resource. Shuffled across
+  // the fixed positions on each generation (no rules, purely random).
+  const PORT_TYPES = [
+    '3:1', '3:1', '3:1', '3:1',
+    '2:1 wood', '2:1 brick', '2:1 sheep', '2:1 wheat', '2:1 ore',
+  ];
+
   const HEX_SIZE = 60; // circumradius of each hex tile, in SVG units
 
   // Max allowed gap (in pips) between the highest- and lowest-pip resource.
@@ -392,11 +414,47 @@
     return board;
   }
 
+  // ---- Ports (harbors) ---------------------------------------------------
+
+  // Edge direction -> the two hex-vertex indices it spans (matches
+  // hexPolygonPoints indexing: vertex i at angle 60*i - 30 degrees).
+  const PORT_EDGE_VERTS = {
+    E: [0, 1], SE: [1, 2], SW: [2, 3], W: [3, 4], NW: [4, 5], NE: [5, 0],
+  };
+  const PORT_MARKER_OFFSET = HEX_SIZE * 0.62; // how far into the sea the marker sits
+  const PORT_MARKER_RADIUS = HEX_SIZE * 0.34;
+
+  function hexVertex(cx, cy, i) {
+    const a = (Math.PI / 180) * (60 * i - 30);
+    return { x: cx + HEX_SIZE * Math.cos(a), y: cy + HEX_SIZE * Math.sin(a) };
+  }
+
+  // Geometry for one port position: its two coastal corners, and the marker
+  // point pushed outward (away from board center) into the sea.
+  function portGeometry({ tile: [q, r], edge }) {
+    const c = axialToPixel(q, r, HEX_SIZE);
+    const [i, j] = PORT_EDGE_VERTS[edge];
+    const c1 = hexVertex(c.x, c.y, i);
+    const c2 = hexVertex(c.x, c.y, j);
+    const mid = { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2 };
+    let nx = mid.x - c.x, ny = mid.y - c.y;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len; ny /= len;
+    const marker = { x: mid.x + nx * PORT_MARKER_OFFSET, y: mid.y + ny * PORT_MARKER_OFFSET };
+    return { c1, c2, marker };
+  }
+
+  // Assign shuffled port types to the fixed positions (plain shuffle, no rules).
+  function generatePorts() {
+    const types = shuffle(PORT_TYPES);
+    return PORT_POSITIONS.map((pos, i) => ({ ...pos, type: types[i] }));
+  }
+
   // ---- Rendering ---------------------------------------------------------
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  function renderBoard(tiles) {
+  function renderBoard(tiles, ports) {
     const svg = document.getElementById('board');
     svg.innerHTML = '';
 
@@ -405,9 +463,15 @@
       return { ...tile, x, y };
     });
 
+    // Extent must include the port markers, which sit outside the tiles.
+    const portGeoms = ports.map(portGeometry);
     const xs = positioned.map(t => t.x);
     const ys = positioned.map(t => t.y);
-    const padding = HEX_SIZE * 1.2;
+    portGeoms.forEach(g => {
+      xs.push(g.marker.x - PORT_MARKER_RADIUS, g.marker.x + PORT_MARKER_RADIUS);
+      ys.push(g.marker.y - PORT_MARKER_RADIUS, g.marker.y + PORT_MARKER_RADIUS);
+    });
+    const padding = HEX_SIZE * 0.6;
     const minX = Math.min(...xs) - padding;
     const maxX = Math.max(...xs) + padding;
     const minY = Math.min(...ys) - padding;
@@ -464,10 +528,73 @@
 
       svg.appendChild(group);
     });
+
+    // Ports drawn last so their docks/markers sit above the sea background.
+    ports.forEach((port, idx) => {
+      const { c1, c2, marker } = portGeoms[idx];
+      const [ratio, resource] = port.type.split(' '); // "3:1" -> ["3:1"], "2:1 wood" -> ["2:1","wood"]
+      const fill = resource ? RESOURCE_COLORS[resource] : '#6b7280';
+
+      const group = document.createElementNS(SVG_NS, 'g');
+
+      // Two dock lines from the marker to the port's coastal corners.
+      for (const corner of [c1, c2]) {
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('x1', marker.x);
+        line.setAttribute('y1', marker.y);
+        line.setAttribute('x2', corner.x);
+        line.setAttribute('y2', corner.y);
+        line.setAttribute('stroke', '#b89a63');
+        line.setAttribute('stroke-width', '3');
+        line.setAttribute('stroke-linecap', 'round');
+        group.appendChild(line);
+      }
+
+      // Marker: rounded token, distinct from the hex tiles.
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      circle.setAttribute('cx', marker.x);
+      circle.setAttribute('cy', marker.y);
+      circle.setAttribute('r', PORT_MARKER_RADIUS);
+      circle.setAttribute('fill', fill);
+      circle.setAttribute('stroke', '#1a1a1a');
+      circle.setAttribute('stroke-width', '2.5');
+      group.appendChild(circle);
+
+      // Label: ratio on top; resource name below for 2:1 ports.
+      const text = document.createElementNS(SVG_NS, 'text');
+      text.setAttribute('x', marker.x);
+      text.setAttribute('y', marker.y);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      text.setAttribute('font-weight', 'bold');
+      text.setAttribute('fill', '#ffffff');
+      text.setAttribute('stroke', 'rgba(0,0,0,0.55)');
+      text.setAttribute('stroke-width', '0.6');
+      text.setAttribute('paint-order', 'stroke');
+
+      const line1 = document.createElementNS(SVG_NS, 'tspan');
+      line1.setAttribute('x', marker.x);
+      line1.setAttribute('dy', resource ? '-0.15em' : '0.35em');
+      line1.setAttribute('font-size', HEX_SIZE * 0.26);
+      line1.textContent = ratio;
+      text.appendChild(line1);
+
+      if (resource) {
+        const line2 = document.createElementNS(SVG_NS, 'tspan');
+        line2.setAttribute('x', marker.x);
+        line2.setAttribute('dy', '1.05em');
+        line2.setAttribute('font-size', HEX_SIZE * 0.19);
+        line2.textContent = resource;
+        text.appendChild(line2);
+      }
+
+      group.appendChild(text);
+      svg.appendChild(group);
+    });
   }
 
   function generateAndRender() {
-    renderBoard(generateValidBoard());
+    renderBoard(generateValidBoard(), generatePorts());
   }
 
   // ---- Dev/debug: spread of the largest mirror-half pip difference --------
