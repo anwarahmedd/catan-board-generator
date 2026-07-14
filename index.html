@@ -35,6 +35,41 @@
     background: #4a9058;
   }
 
+  #rule-panel {
+    width: 100%;
+    max-width: 720px;
+    box-sizing: border-box;
+    background: #242a31;
+    border: 1px solid #333b44;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  #rule-panel label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    cursor: pointer;
+  }
+
+  #rule-panel input[type="checkbox"] {
+    accent-color: #3d7a4a;
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    cursor: pointer;
+  }
+
+  #rule-panel-master {
+    font-weight: 700;
+    border-bottom: 1px solid #333b44;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.5rem;
+  }
+
   #board-container {
     width: 100%;
     max-width: 720px;
@@ -51,6 +86,13 @@
 
 <h1>Settlers of Catan &mdash; Random Board</h1>
 <button id="generate-btn">Generate new board</button>
+<div id="rule-panel">
+  <label id="rule-panel-master">
+    <input type="checkbox" id="rule-master" checked>
+    <span>All rules (recommended)</span>
+  </label>
+  <div id="rule-list"></div>
+</div>
 <div id="board-container">
   <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
 </div>
@@ -398,29 +440,33 @@
     return largestResourceCluster(tiles) <= MAX_RESOURCE_BLOB;
   }
 
-  // All active rules. Add more rule functions here as they're written.
+  // Single source of truth for the selectable rules: id, user-facing label,
+  // and the existing check function for each. The checklist UI, the id order,
+  // and the labels are all driven from this one array. Add more rules here.
   const BOARD_RULES = [
-    ruleNoAdjacentReds,
-    ruleNoAdjacentSameNumber,
-    ruleResourcePipBalance,
-    ruleMirrorLinePipBalance,
-    ruleNoStrongSettlementSpot,
-    ruleNoFullResourceBlob,
+    { id: 'redAdjacency',  label: 'No adjacent 6s & 8s (official Catan rule)', check: ruleNoAdjacentReds },
+    { id: 'dupAdjacency',  label: 'No adjacent duplicate numbers',            check: ruleNoAdjacentSameNumber },
+    { id: 'resourcePips',  label: 'No overpowered resources',                 check: ruleResourcePipBalance },
+    { id: 'regionPips',    label: 'No overpowered regions',                   check: ruleMirrorLinePipBalance },
+    { id: 'settlementCap', label: 'No overpowered settlement spots',          check: ruleNoStrongSettlementSpot },
+    { id: 'resourceClump', label: 'No large same-resource clumps',            check: ruleNoFullResourceBlob },
   ];
 
-  function isValidBoard(tiles) {
-    return BOARD_RULES.every(rule => rule(tiles));
+  // A board is valid when it passes every currently-active rule. With zero
+  // active rules this returns true immediately (pure random shuffle).
+  function isValidBoard(tiles, activeRules) {
+    return activeRules.every(rule => rule.check(tiles));
   }
 
   const MAX_GENERATION_ATTEMPTS = 5000;
 
   // Rejection sampling: keep generating until a board passes every rule,
   // falling back to the last attempt if the cap is reached.
-  function generateValidBoard() {
+  function generateValidBoard(activeRules) {
     let board;
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
       board = buildBoard();
-      if (isValidBoard(board)) return board;
+      if (isValidBoard(board, activeRules)) return board;
     }
     console.warn(
       `No valid board found in ${MAX_GENERATION_ATTEMPTS} attempts; rendering last board.`
@@ -664,7 +710,11 @@
   }
 
   function generateAndRender() {
-    renderBoard(generateValidBoard(), generatePorts());
+    // Read checkbox state fresh on every click; only run the checked rules.
+    const activeRules = BOARD_RULES.filter(
+      rule => document.getElementById(`rule-${rule.id}`).checked
+    );
+    renderBoard(generateValidBoard(activeRules), generatePorts());
   }
 
   // ---- Dev/debug: spread of the largest mirror-half pip difference --------
@@ -745,6 +795,39 @@
     return { totals, blobs };
   }
   window.debugResourceClusterSpread = debugResourceClusterSpread;
+
+  // ---- Rule-selection checklist ------------------------------------------
+  // Render the six individual checkboxes by looping over BOARD_RULES, then
+  // wire the master checkbox as a simple two-state toggle that stays in sync.
+  const masterCheckbox = document.getElementById('rule-master');
+  const ruleList = document.getElementById('rule-list');
+
+  BOARD_RULES.forEach(rule => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = `rule-${rule.id}`;
+    input.checked = true; // default: all six on, matching today's behaviour
+    const span = document.createElement('span');
+    span.textContent = rule.label;
+    label.appendChild(input);
+    label.appendChild(span);
+    ruleList.appendChild(label);
+  });
+
+  const ruleCheckboxes = BOARD_RULES.map(rule => document.getElementById(`rule-${rule.id}`));
+
+  // Master toggles all six.
+  masterCheckbox.addEventListener('change', () => {
+    ruleCheckboxes.forEach(cb => { cb.checked = masterCheckbox.checked; });
+  });
+
+  // Master auto-syncs: checked only when every individual rule is checked.
+  ruleCheckboxes.forEach(cb => {
+    cb.addEventListener('change', () => {
+      masterCheckbox.checked = ruleCheckboxes.every(c => c.checked);
+    });
+  });
 
   document.getElementById('generate-btn').addEventListener('click', generateAndRender);
 
