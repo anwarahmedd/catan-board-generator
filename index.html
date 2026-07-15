@@ -471,18 +471,9 @@
 <script>
   // ---- Editable board data ----------------------------------------------
 
-  // 19 tiles: 4 wood, 4 sheep, 4 wheat, 3 brick, 3 ore, 1 desert
-  const TILE_RESOURCES = [
-    'wood', 'wood', 'wood', 'wood',
-    'sheep', 'sheep', 'sheep', 'sheep',
-    'wheat', 'wheat', 'wheat', 'wheat',
-    'brick', 'brick', 'brick',
-    'ore', 'ore', 'ore',
-    'desert'
-  ];
-
-  // 18 number tokens: one 2, one 12, two each of 3,4,5,6,8,9,10,11
-  const NUMBER_TOKENS = [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12];
+  // All board-specific data (axial coords, tile/number pools, ports, mirror
+  // splits, rule caps, viewBox) lives in BASE_CONFIG further down, after the
+  // hex-grid helpers it is built with. Shared art and sizing stay up here.
 
   // Resource tile artwork (hexagon PNGs, resized to ~256px and embedded as
   // base64 WebP so this stays a single self-contained file). Replaces the
@@ -495,28 +486,6 @@
     ore: 'data:image/webp;base64,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',
     desert: 'data:image/webp;base64,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',
   };
-
-  // 9 fixed harbor (port) positions around the coastline. Each sits on one
-  // sea-facing hex edge, given by its anchor tile [q,r] and edge direction;
-  // that edge's two endpoints are the settlement corners the port connects to.
-  const PORT_POSITIONS = [
-    { tile: [0, -2],  edge: 'NW' },
-    { tile: [1, -2],  edge: 'NE' },
-    { tile: [2, -2],  edge: 'E'  },
-    { tile: [2, 0],   edge: 'E'  },
-    { tile: [1, 1],   edge: 'SE' },
-    { tile: [0, 2],   edge: 'SE' },
-    { tile: [-2, 2],  edge: 'SW' },
-    { tile: [-2, 1],  edge: 'W'  },
-    { tile: [-2, 0],  edge: 'NW' },
-  ];
-
-  // 9 port types: 4 generic 3:1, plus one 2:1 per resource. Shuffled across
-  // the fixed positions on each generation (no rules, purely random).
-  const PORT_TYPES = [
-    '3:1', '3:1', '3:1', '3:1',
-    '2:1 wood', '2:1 brick', '2:1 sheep', '2:1 wheat', '2:1 ore',
-  ];
 
   // Port ship artwork (square images auto-centered on the ship, masked to a
   // circle at render time). Resized to 128px and embedded as base64 WebP.
@@ -531,29 +500,11 @@
 
   const HEX_SIZE = 60; // circumradius of each hex tile, in SVG units
 
-  // Max allowed gap (in pips) between the highest- and lowest-pip resource.
-  // Lower = more balanced boards but harder to satisfy. Tune to taste.
-  const MAX_PIP_GAP = 6;
-
-  // Mirror-line fairness: max allowed pip difference between the two halves
-  // on ANY of the three mirror axes. Set to clip only the extreme tail
-  // (~3% of boards) while preserving variety. Re-tune via debugMirrorSpread().
-  const MAX_HALF_PIP_DIFF = 14;
-
-  // Settlement-spot fairness: max allowed pip sum at any interior corner
-  // (three mutually-adjacent tiles). 12 forbids the strongest 13-pip spots.
-  const MAX_SETTLEMENT_PIPS = 12;
-
-  // Resource clustering: max allowed size of a single-resource connected blob
-  // (desert excluded). 3 rejects boards where any resource is fully connected
-  // (a 4-blob). Tunable; re-check the spread via debugResourceClusterSpread().
-  const MAX_RESOURCE_BLOB = 3;
-
   // ---- Hex grid layout ---------------------------------------------------
 
-  // Axial coordinates for a hexagon-shaped board of radius 2.
-  // Grouping these by `r` produces rows of 3, 4, 5, 4, 3 tiles (19 total),
-  // matching the standard Catan board shape.
+  // Axial coordinates for a hexagon-shaped board of the given radius.
+  // At radius 2, grouping these by `r` produces rows of 3, 4, 5, 4, 3 tiles
+  // (19 total), matching the standard Catan board shape.
   function generateAxialCoords(radius) {
     const coords = [];
     for (let q = -radius; q <= radius; q++) {
@@ -565,8 +516,6 @@
     }
     return coords;
   }
-
-  const AXIAL_COORDS = generateAxialCoords(2);
 
   // Pointy-top axial-to-pixel conversion.
   function axialToPixel(q, r, size) {
@@ -599,19 +548,19 @@
     return copy;
   }
 
-  function buildBoard() {
-    const resources = shuffle(TILE_RESOURCES);
-    const numbers = shuffle(NUMBER_TOKENS);
+  function buildBoard(config) {
+    const resources = shuffle(config.tilePool);
+    const numbers = shuffle(config.numberPool);
     let numberIndex = 0;
 
-    return AXIAL_COORDS.map(({ q, r }, i) => {
+    return config.coords.map(({ q, r }, i) => {
       const resource = resources[i];
       const number = resource === 'desert' ? null : numbers[numberIndex++];
       return { q, r, resource, number };
     });
   }
 
-  // ---- Adjacency ---------------------------------------------------------
+  // ---- Board config ------------------------------------------------------
 
   // Two hexes are neighbors when their axial distance is exactly 1.
   function axialDistance(a, b) {
@@ -622,13 +571,130 @@
     ) / 2;
   }
 
-  // Precompute neighbor indices for each tile position (indices into AXIAL_COORDS).
-  const ADJACENCY = AXIAL_COORDS.map((tile, i) =>
-    AXIAL_COORDS.reduce((neighbors, other, j) => {
-      if (i !== j && axialDistance(tile, other) === 1) neighbors.push(j);
-      return neighbors;
-    }, [])
-  );
+  // Attach the geometry derived from a config's coords, so every board ships
+  // with its own precomputed structures instead of global singletons:
+  //   adjacency          - per-tile neighbor indices (into config.coords)
+  //   settlementCorners  - interior corners: sets of 3 mutually-adjacent
+  //                        tiles, each counted once (i<j<k)
+  //   mirrorSplitIndices - config.mirrorSplits with [q,r] pairs resolved to
+  //                        tile indices
+  function finalizeBoardConfig(config) {
+    const adjacency = config.coords.map((tile, i) =>
+      config.coords.reduce((neighbors, other, j) => {
+        if (i !== j && axialDistance(tile, other) === 1) neighbors.push(j);
+        return neighbors;
+      }, [])
+    );
+
+    const settlementCorners = [];
+    for (let i = 0; i < adjacency.length; i++) {
+      for (const j of adjacency[i]) {
+        if (j <= i) continue;
+        for (const k of adjacency[j]) {
+          if (k <= j) continue;
+          if (adjacency[i].includes(k)) settlementCorners.push([i, j, k]);
+        }
+      }
+    }
+
+    const coordIndex = new Map(config.coords.map((c, i) => [`${c.q},${c.r}`, i]));
+    const mirrorSplitIndices = config.mirrorSplits.map(split => ({
+      a: split.a.map(([q, r]) => coordIndex.get(`${q},${r}`)),
+      b: split.b.map(([q, r]) => coordIndex.get(`${q},${r}`)),
+    }));
+
+    return { ...config, adjacency, settlementCorners, mirrorSplitIndices };
+  }
+
+  // The 3-4 player base game — currently the only board. Later boards (the
+  // 5-6 player extension) become sibling configs fed through the same pipeline.
+  const BASE_CONFIG = finalizeBoardConfig({
+    id: 'base',
+
+    // Axial coordinates for the hexagon-shaped board of radius 2 (19 tiles).
+    coords: generateAxialCoords(2),
+
+    // 19 tiles: 4 wood, 4 sheep, 4 wheat, 3 brick, 3 ore, 1 desert
+    tilePool: [
+      'wood', 'wood', 'wood', 'wood',
+      'sheep', 'sheep', 'sheep', 'sheep',
+      'wheat', 'wheat', 'wheat', 'wheat',
+      'brick', 'brick', 'brick',
+      'ore', 'ore', 'ore',
+      'desert',
+    ],
+
+    // 18 number tokens: one 2, one 12, two each of 3,4,5,6,8,9,10,11
+    numberPool: [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12],
+
+    // 9 fixed harbor (port) positions around the coastline. Each sits on one
+    // sea-facing hex edge, given by its anchor tile [q,r] and edge direction;
+    // that edge's two endpoints are the settlement corners the port connects to.
+    portPositions: [
+      { tile: [0, -2],  edge: 'NW' },
+      { tile: [1, -2],  edge: 'NE' },
+      { tile: [2, -2],  edge: 'E'  },
+      { tile: [2, 0],   edge: 'E'  },
+      { tile: [1, 1],   edge: 'SE' },
+      { tile: [0, 2],   edge: 'SE' },
+      { tile: [-2, 2],  edge: 'SW' },
+      { tile: [-2, 1],  edge: 'W'  },
+      { tile: [-2, 0],  edge: 'NW' },
+    ],
+
+    // 9 port types: 4 generic 3:1, plus one 2:1 per resource. Shuffled across
+    // the fixed positions on each generation (no rules, purely random).
+    portTypes: [
+      '3:1', '3:1', '3:1', '3:1',
+      '2:1 wood', '2:1 brick', '2:1 sheep', '2:1 wheat', '2:1 ore',
+    ],
+
+    // Mirror-line fairness axes (true edge-to-edge mirror axes). Each axis
+    // splits the 19 positions into two equal halves of 8 tiles. Three tiles
+    // lie ON each axis (center + 2); they are self-mirroring and so excluded
+    // from that axis's comparison. Splits are positional and fixed: every half
+    // always holds exactly 8 positions, and the desert contributes 0 pips
+    // wherever it lands, so tile counts never drift.
+    mirrorSplits: [
+      { // Axis A - vertical |
+        a: [[0,-2],[-1,-1],[0,-1],[-2,0],[-1,0],[-2,1],[-1,1],[-2,2]],
+        b: [[2,-2],[1,-1],[2,-1],[1,0],[2,0],[0,1],[1,1],[0,2]],
+      },
+      { // Axis B - diagonal /
+        a: [[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1],[-2,0],[-1,0]],
+        b: [[1,0],[2,0],[-1,1],[0,1],[1,1],[-2,2],[-1,2],[0,2]],
+      },
+      { // Axis C - diagonal \
+        a: [[0,-2],[1,-2],[2,-2],[0,-1],[1,-1],[2,-1],[1,0],[2,0]],
+        b: [[-2,0],[-1,0],[-2,1],[-1,1],[0,1],[-2,2],[-1,2],[0,2]],
+      },
+    ],
+
+    // Stable board coordinate system. The square is centered on the island's
+    // fixed axial origin and permanently includes the largest possible port
+    // pill plus sea padding, independent of the randomly assigned port labels.
+    viewBox: '-420 -360 840 720',
+
+    ruleCaps: {
+      // Max allowed gap (in pips) between the highest- and lowest-pip resource.
+      // Lower = more balanced boards but harder to satisfy. Tune to taste.
+      maxPipGap: 6,
+
+      // Mirror-line fairness: max allowed pip difference between the two halves
+      // on ANY of the mirror axes. Set to clip only the extreme tail (~3% of
+      // boards) while preserving variety. Re-tune via debugMirrorSpread().
+      maxHalfPipDiff: 14,
+
+      // Settlement-spot fairness: max allowed pip sum at any interior corner
+      // (three mutually-adjacent tiles). 12 forbids the strongest 13-pip spots.
+      maxSettlementPips: 12,
+
+      // Resource clustering: max allowed size of a single-resource connected
+      // blob (desert excluded). 3 rejects boards where any resource is fully
+      // connected (a 4-blob). Re-check via debugResourceClusterSpread().
+      maxResourceBlob: 3,
+    },
+  });
 
   // ---- Board validation --------------------------------------------------
 
@@ -638,10 +704,10 @@
   }
 
   // Rule: no two red number tokens may sit on adjacent tiles.
-  function ruleNoAdjacentReds(tiles) {
+  function ruleNoAdjacentReds(tiles, config) {
     for (let i = 0; i < tiles.length; i++) {
       if (!isRedNumber(tiles[i].number)) continue;
-      for (const j of ADJACENCY[i]) {
+      for (const j of config.adjacency[i]) {
         if (j > i && isRedNumber(tiles[j].number)) return false;
       }
     }
@@ -650,10 +716,10 @@
 
   // Rule: no two tiles with the same number token may be adjacent.
   // Desert tiles (number === null) have no token and are exempt.
-  function ruleNoAdjacentSameNumber(tiles) {
+  function ruleNoAdjacentSameNumber(tiles, config) {
     for (let i = 0; i < tiles.length; i++) {
       if (tiles[i].number === null) continue;
-      for (const j of ADJACENCY[i]) {
+      for (const j of config.adjacency[i]) {
         if (j > i && tiles[j].number === tiles[i].number) return false;
       }
     }
@@ -672,8 +738,8 @@
 
   // Rule: resource pip balance. Sum each resource's pips across its tiles;
   // reject if the highest-pip resource exceeds the lowest by more than
-  // MAX_PIP_GAP. Desert produces nothing and is excluded.
-  function ruleResourcePipBalance(tiles) {
+  // the maxPipGap cap. Desert produces nothing and is excluded.
+  function ruleResourcePipBalance(tiles, config) {
     const pipsByResource = {};
     for (const tile of tiles) {
       if (tile.resource === 'desert') continue;
@@ -681,46 +747,21 @@
         (pipsByResource[tile.resource] || 0) + PIP_VALUES[tile.number];
     }
     const totals = Object.values(pipsByResource);
-    return Math.max(...totals) - Math.min(...totals) <= MAX_PIP_GAP;
+    return Math.max(...totals) - Math.min(...totals) <= config.ruleCaps.maxPipGap;
   }
 
   // ---- Mirror-line pip balance (Option A: true edge-to-edge mirror axes) --
-
-  // Each mirror axis splits the 19 positions into two equal halves of 8 tiles.
-  // Three tiles lie ON each axis (center + 2); they are self-mirroring and so
-  // excluded from that axis's comparison. Splits are positional and fixed:
-  // every half always holds exactly 8 positions, and the desert contributes
-  // 0 pips wherever it lands, so tile counts never drift.
-  const MIRROR_SPLITS = [
-    { // Axis A - vertical |
-      a: [[0,-2],[-1,-1],[0,-1],[-2,0],[-1,0],[-2,1],[-1,1],[-2,2]],
-      b: [[2,-2],[1,-1],[2,-1],[1,0],[2,0],[0,1],[1,1],[0,2]],
-    },
-    { // Axis B - diagonal /
-      a: [[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1],[-2,0],[-1,0]],
-      b: [[1,0],[2,0],[-1,1],[0,1],[1,1],[-2,2],[-1,2],[0,2]],
-    },
-    { // Axis C - diagonal \
-      a: [[0,-2],[1,-2],[2,-2],[0,-1],[1,-1],[2,-1],[1,0],[2,0]],
-      b: [[-2,0],[-1,0],[-2,1],[-1,1],[0,1],[-2,2],[-1,2],[0,2]],
-    },
-  ];
-
-  // Resolve each split's [q,r] pairs to tile indices (into AXIAL_COORDS) once.
-  const coordIndex = new Map(AXIAL_COORDS.map((c, i) => [`${c.q},${c.r}`, i]));
-  const MIRROR_SPLIT_INDICES = MIRROR_SPLITS.map(split => ({
-    a: split.a.map(([q, r]) => coordIndex.get(`${q},${r}`)),
-    b: split.b.map(([q, r]) => coordIndex.get(`${q},${r}`)),
-  }));
+  // The split data lives in each config's mirrorSplits; finalizeBoardConfig
+  // resolves it to tile indices (config.mirrorSplitIndices).
 
   function pipOf(tile) {
     return tile.number === null ? 0 : PIP_VALUES[tile.number];
   }
 
-  // Largest absolute half-pip difference across the three mirror axes.
-  function largestHalfPipDiff(tiles) {
+  // Largest absolute half-pip difference across the config's mirror axes.
+  function largestHalfPipDiff(tiles, config) {
     let largest = 0;
-    for (const split of MIRROR_SPLIT_INDICES) {
+    for (const split of config.mirrorSplitIndices) {
       const sumA = split.a.reduce((s, i) => s + pipOf(tiles[i]), 0);
       const sumB = split.b.reduce((s, i) => s + pipOf(tiles[i]), 0);
       largest = Math.max(largest, Math.abs(sumA - sumB));
@@ -729,34 +770,19 @@
   }
 
   // Rule: reject only boards whose worst mirror-half imbalance exceeds the cap.
-  function ruleMirrorLinePipBalance(tiles) {
-    return largestHalfPipDiff(tiles) <= MAX_HALF_PIP_DIFF;
+  function ruleMirrorLinePipBalance(tiles, config) {
+    return largestHalfPipDiff(tiles, config) <= config.ruleCaps.maxHalfPipDiff;
   }
 
   // ---- Settlement-spot pip balance ---------------------------------------
-
-  // An interior settlement corner is a set of 3 mutually-adjacent tiles.
-  // Derive all of them from the existing ADJACENCY map (each counted once,
-  // i<j<k). On a standard 19-tile board this yields 24 corners.
-  const SETTLEMENT_CORNERS = (() => {
-    const corners = [];
-    for (let i = 0; i < ADJACENCY.length; i++) {
-      for (const j of ADJACENCY[i]) {
-        if (j <= i) continue;
-        for (const k of ADJACENCY[j]) {
-          if (k <= j) continue;
-          if (ADJACENCY[i].includes(k)) corners.push([i, j, k]);
-        }
-      }
-    }
-    return corners;
-  })();
+  // Interior settlement corners are derived per-config by finalizeBoardConfig
+  // (config.settlementCorners). On the standard 19-tile board there are 24.
 
   // Rule: reject if any corner's three-tile pip sum exceeds the cap.
   // Desert contributes 0 pips via pipOf. Cap 12 forbids 13-pip spots.
-  function ruleNoStrongSettlementSpot(tiles) {
-    for (const [i, j, k] of SETTLEMENT_CORNERS) {
-      if (pipOf(tiles[i]) + pipOf(tiles[j]) + pipOf(tiles[k]) > MAX_SETTLEMENT_PIPS) {
+  function ruleNoStrongSettlementSpot(tiles, config) {
+    for (const [i, j, k] of config.settlementCorners) {
+      if (pipOf(tiles[i]) + pipOf(tiles[j]) + pipOf(tiles[k]) > config.ruleCaps.maxSettlementPips) {
         return false;
       }
     }
@@ -767,11 +793,11 @@
 
   // Count edge-adjacent tile pairs sharing the same resource (desert excluded).
   // Used by the debug readout (total-count metric).
-  function countSameResourcePairs(tiles) {
+  function countSameResourcePairs(tiles, adjacency) {
     let count = 0;
     for (let i = 0; i < tiles.length; i++) {
       if (tiles[i].resource === 'desert') continue;
-      for (const j of ADJACENCY[i]) {
+      for (const j of adjacency[i]) {
         if (j > i && tiles[j].resource === tiles[i].resource) count++;
       }
     }
@@ -779,8 +805,8 @@
   }
 
   // Size of the biggest connected same-resource component (desert excluded),
-  // via flood-fill over ADJACENCY.
-  function largestResourceCluster(tiles) {
+  // via flood-fill over the adjacency map.
+  function largestResourceCluster(tiles, adjacency) {
     const seen = new Array(tiles.length).fill(false);
     let largest = 0;
     for (let start = 0; start < tiles.length; start++) {
@@ -792,7 +818,7 @@
       while (stack.length) {
         const i = stack.pop();
         size++;
-        for (const j of ADJACENCY[i]) {
+        for (const j of adjacency[i]) {
           if (!seen[j] && tiles[j].resource === res) {
             seen[j] = true;
             stack.push(j);
@@ -805,10 +831,10 @@
   }
 
   // Rule: reject boards where any single resource forms a fully-connected blob.
-  // Loose by design — mild clustering (blobs up to MAX_RESOURCE_BLOB) is kept;
-  // this only kills the "whole resource lumped together" case.
-  function ruleNoFullResourceBlob(tiles) {
-    return largestResourceCluster(tiles) <= MAX_RESOURCE_BLOB;
+  // Loose by design — mild clustering (blobs up to the maxResourceBlob cap) is
+  // kept; this only kills the "whole resource lumped together" case.
+  function ruleNoFullResourceBlob(tiles, config) {
+    return largestResourceCluster(tiles, config.adjacency) <= config.ruleCaps.maxResourceBlob;
   }
 
   // Single source of truth for the selectable rules: id, user-facing label,
@@ -825,19 +851,19 @@
 
   // A board is valid when it passes every currently-active rule. With zero
   // active rules this returns true immediately (pure random shuffle).
-  function isValidBoard(tiles, activeRules) {
-    return activeRules.every(rule => rule.check(tiles));
+  function isValidBoard(tiles, activeRules, config) {
+    return activeRules.every(rule => rule.check(tiles, config));
   }
 
   const MAX_GENERATION_ATTEMPTS = 5000;
 
   // Rejection sampling: keep generating until a board passes every rule,
   // falling back to the last attempt if the cap is reached.
-  function generateValidBoard(activeRules) {
+  function generateValidBoard(activeRules, config) {
     let board;
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
-      board = buildBoard();
-      if (isValidBoard(board, activeRules)) return board;
+      board = buildBoard(config);
+      if (isValidBoard(board, activeRules, config)) return board;
     }
     console.warn(
       `No valid board found in ${MAX_GENERATION_ATTEMPTS} attempts; rendering last board.`
@@ -855,11 +881,6 @@
   const PORT_MARKER_OFFSET = HEX_SIZE * 0.78; // how far into the sea the marker sits
   const PORT_MARKER_RADIUS = HEX_SIZE * 0.50; // enlarged so the ship art reads clearly
   const PORT_LABEL_FONT = HEX_SIZE * 0.20;    // type label in a pill outside the circle
-
-  // Stable board coordinate system. The square is centered on the island's
-  // fixed axial origin and permanently includes the largest possible port pill
-  // plus sea padding, independent of the randomly assigned port labels.
-  const BOARD_VIEWBOX = '-420 -360 840 720';
 
   function hexVertex(cx, cy, i) {
     const a = (Math.PI / 180) * (60 * i - 30);
@@ -882,19 +903,19 @@
   }
 
   // Assign shuffled port types to the fixed positions (plain shuffle, no rules).
-  function generatePorts() {
-    const types = shuffle(PORT_TYPES);
-    return PORT_POSITIONS.map((pos, i) => ({ ...pos, type: types[i] }));
+  function generatePorts(config) {
+    const types = shuffle(config.portTypes);
+    return config.portPositions.map((pos, i) => ({ ...pos, type: types[i] }));
   }
 
   // ---- Rendering ---------------------------------------------------------
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  function renderBoard(tiles, ports) {
+  function renderBoard(tiles, ports, config) {
     const svg = document.getElementById('board');
     svg.innerHTML = '';
-    svg.setAttribute('viewBox', BOARD_VIEWBOX);
+    svg.setAttribute('viewBox', config.viewBox);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
     // All rendered content shares this invariant origin. Regeneration only
@@ -1079,19 +1100,20 @@
     const activeRules = BOARD_RULES.filter(
       rule => document.getElementById(`rule-${rule.id}`).checked
     );
-    renderBoard(generateValidBoard(activeRules), generatePorts());
+    const config = BASE_CONFIG; // the only board config so far
+    renderBoard(generateValidBoard(activeRules, config), generatePorts(config), config);
   }
 
   // ---- Dev/debug: spread of the largest mirror-half pip difference --------
   // Prints min/max/mean and a histogram over a batch of RAW boards so
-  // MAX_HALF_PIP_DIFF can be tuned from real data. Set to false to silence.
-  // Re-run any time from the console with: debugMirrorSpread(1000)
+  // ruleCaps.maxHalfPipDiff can be tuned from real data. Set to false to
+  // silence. Re-run any time from the console with: debugMirrorSpread(1000)
   const DEBUG_MIRROR_SPREAD = false;
   const DEBUG_SAMPLE_SIZE = 500;
 
-  function debugMirrorSpread(n = DEBUG_SAMPLE_SIZE) {
+  function debugMirrorSpread(n = DEBUG_SAMPLE_SIZE, config = BASE_CONFIG) {
     const values = [];
-    for (let k = 0; k < n; k++) values.push(largestHalfPipDiff(buildBoard()));
+    for (let k = 0; k < n; k++) values.push(largestHalfPipDiff(buildBoard(config), config));
     const min = Math.min(...values);
     const max = Math.max(...values);
     const mean = values.reduce((a, b) => a + b, 0) / n;
@@ -1113,15 +1135,15 @@
       `[mirror-spread] n=${n} raw boards | largest-of-3 half-pip diff\n` +
       `  min=${min}  max=${max}  mean=${mean.toFixed(2)}\n` +
       `distribution:\n${bars}` +
-      `cumulative (choose MAX_HALF_PIP_DIFF to clip the tail):\n${cum}`
+      `cumulative (choose maxHalfPipDiff to clip the tail):\n${cum}`
     );
     return { min, max, mean, hist };
   }
   window.debugMirrorSpread = debugMirrorSpread; // reachable from the console
 
   // ---- Dev/debug: resource-clustering spread ------------------------------
-  // Prints TWO metrics over a batch of RAW boards so MAX_RESOURCE_CLUSTERS can
-  // be tuned, and so you can compare a total-count cap vs a per-resource blob:
+  // Prints TWO metrics over a batch of RAW boards so ruleCaps.maxResourceBlob
+  // can be tuned, and so you can compare a total-count cap vs a per-resource blob:
   //   (1) total same-resource edge-adjacent pairs per board
   //   (2) largest single-resource connected cluster (blob) per board
   // Set to false to silence. Re-run from console: debugResourceClusterSpread(1000)
@@ -1144,16 +1166,16 @@
     return `${label}\n  min=${min}  max=${max}  mean=${mean.toFixed(2)}\ndistribution:\n${bars}cumulative:\n${cum}`;
   }
 
-  function debugResourceClusterSpread(n = 500) {
+  function debugResourceClusterSpread(n = 500, config = BASE_CONFIG) {
     const totals = [], blobs = [];
     for (let k = 0; k < n; k++) {
-      const b = buildBoard();
-      totals.push(countSameResourcePairs(b));
-      blobs.push(largestResourceCluster(b));
+      const b = buildBoard(config);
+      totals.push(countSameResourcePairs(b, config.adjacency));
+      blobs.push(largestResourceCluster(b, config.adjacency));
     }
     console.log(
       `[resource-cluster] n=${n} raw boards\n\n` +
-      summarize('(1) total same-resource adjacent pairs  [MAX_RESOURCE_CLUSTERS caps this]', totals, n) +
+      summarize('(1) total same-resource adjacent pairs (informational)', totals, n) +
       `\n` +
       summarize('(2) largest single-resource blob (connected tiles of one resource)', blobs, n)
     );

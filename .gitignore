@@ -19,3 +19,6 @@ temp/
 
 # Dependencies (none expected in this project, but guard against accidents)
 node_modules/
+
+# Stray source-art file kept locally, not part of the app
+CN3081-image4_2000_535x.webp
