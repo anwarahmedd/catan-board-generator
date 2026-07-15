@@ -517,6 +517,22 @@
     return coords;
   }
 
+  // Axial coords for the elongated 5-6 player island: 7 rows of 3,4,5,6,5,4,3
+  // tiles (30 total). Not a radius-N hexagon — a cube-coordinate box:
+  // q in [-3,2], r in [-3,3], s = -q-r in [-2,3]. The shape is symmetric under
+  // 180-degree rotation about the axial point (-0.5, 0), i.e. (q,r) -> (-1-q,-r);
+  // in pixels every row centers on x = -(sqrt(3)/2)*HEX_SIZE, absorbed by the
+  // extension viewBox rather than by fudging coordinates.
+  function generateElongatedCoords() {
+    const coords = [];
+    for (let r = -3; r <= 3; r++) {
+      const qMin = Math.max(-3, -r - 3);
+      const qMax = Math.min(2, -r + 2);
+      for (let q = qMin; q <= qMax; q++) coords.push({ q, r });
+    }
+    return coords;
+  }
+
   // Pointy-top axial-to-pixel conversion.
   function axialToPixel(q, r, size) {
     const x = size * Math.sqrt(3) * (q + r / 2);
@@ -598,7 +614,7 @@
     }
 
     const coordIndex = new Map(config.coords.map((c, i) => [`${c.q},${c.r}`, i]));
-    const mirrorSplitIndices = config.mirrorSplits.map(split => ({
+    const mirrorSplitIndices = (config.mirrorSplits || []).map(split => ({
       a: split.a.map(([q, r]) => coordIndex.get(`${q},${r}`)),
       b: split.b.map(([q, r]) => coordIndex.get(`${q},${r}`)),
     }));
@@ -696,6 +712,59 @@
     },
   });
 
+  // The 5-6 player extension (Phase 2 of 4: board generation only).
+  // Ports are STUBBED (Phase 4 authors the real coastal anchors) and rule caps
+  // are loose PLACEHOLDERS (Phase 3 tunes them from the debug histograms, and
+  // authors the mirror splits for the elongated shape's two axes).
+  const EXTENSION_CONFIG = finalizeBoardConfig({
+    id: 'extension',
+
+    // 30 tiles in 7 rows of 3,4,5,6,5,4,3 (see generateElongatedCoords).
+    coords: generateElongatedCoords(),
+
+    // 30 tiles: 6 wood, 6 sheep, 6 wheat, 5 brick, 5 ore, 2 deserts.
+    tilePool: [
+      'wood', 'wood', 'wood', 'wood', 'wood', 'wood',
+      'sheep', 'sheep', 'sheep', 'sheep', 'sheep', 'sheep',
+      'wheat', 'wheat', 'wheat', 'wheat', 'wheat', 'wheat',
+      'brick', 'brick', 'brick', 'brick', 'brick',
+      'ore', 'ore', 'ore', 'ore', 'ore',
+      'desert', 'desert',
+    ],
+
+    // 28 number tokens (one per non-desert tile): two each of 2 and 12,
+    // three each of 3,4,5,6,8,9,10,11.
+    numberPool: [
+      2, 2,
+      3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6,
+      8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 11,
+      12, 12,
+    ],
+
+    portPositions: [],  // STUB — real 11-port coastal anchors come in Phase 4
+    portTypes: [],      // STUB — Phase 4
+
+    mirrorSplits: [],   // STUB — Phase 3 authors the elongated board's axes
+
+    // Sized like the base viewBox (same sea/port padding proportions) around
+    // the 623.5x660 island, whose center sits at x ~= -51.96 (see
+    // generateElongatedCoords). Phase 4 may adjust once real ports land.
+    viewBox: '-532 -450 960 900',
+
+    // PLACEHOLDERS — deliberately non-binding so untuned generation succeeds;
+    // Phase 3 replaces these with values read off the debug histograms. They
+    // must stay non-binding because the two structural rules already reject
+    // hard here (raw-board pass rates: no-adjacent-duplicates ~1% with eight
+    // number-triples, no-adjacent-reds ~3% with six red tokens), so any cap
+    // pressure on top pushes the sampler into its 5000-attempt ceiling.
+    ruleCaps: {
+      maxPipGap: 20,      // measured: never binds (~17.6 mean pips/resource)
+      maxHalfPipDiff: 99, // moot while mirrorSplits is empty (rule passes trivially)
+      maxSettlementPips: 15, // = the 3-tile corner maximum, so never binds
+      maxResourceBlob: 6,    // = the largest resource count, so never binds
+    },
+  });
+
   // ---- Board validation --------------------------------------------------
 
   // A "red" (high-probability) token is a 6 or an 8.
@@ -771,6 +840,9 @@
 
   // Rule: reject only boards whose worst mirror-half imbalance exceeds the cap.
   function ruleMirrorLinePipBalance(tiles, config) {
+    // Configs without authored mirror splits (the extension until Phase 3)
+    // pass trivially rather than erroring or rejecting everything.
+    if (config.mirrorSplitIndices.length === 0) return true;
     return largestHalfPipDiff(tiles, config) <= config.ruleCaps.maxHalfPipDiff;
   }
 
@@ -903,9 +975,11 @@
   }
 
   // Assign shuffled port types to the fixed positions (plain shuffle, no rules).
+  // A config with no ports yet (the extension until Phase 4) yields an empty
+  // list, which renderBoard draws as simply no ports.
   function generatePorts(config) {
-    const types = shuffle(config.portTypes);
-    return config.portPositions.map((pos, i) => ({ ...pos, type: types[i] }));
+    const types = shuffle(config.portTypes || []);
+    return (config.portPositions || []).map((pos, i) => ({ ...pos, type: types[i] }));
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -1100,8 +1174,9 @@
     const activeRules = BOARD_RULES.filter(
       rule => document.getElementById(`rule-${rule.id}`).checked
     );
-    const config = BASE_CONFIG; // the only board config so far
+    const config = activeConfig; // set by the router: base or extension
     renderBoard(generateValidBoard(activeRules, config), generatePorts(config), config);
+    renderedConfigId = config.id;
   }
 
   // ---- Dev/debug: spread of the largest mirror-half pip difference --------
@@ -1245,20 +1320,29 @@
     extension: document.getElementById('view-extension'),
   };
 
-  // The generator renders its first board only when its view is first shown,
-  // so landing on the page doesn't generate a board.
-  let baseGenerated = false;
+  // Both generator modes run through the shared #view-base DOM for now
+  // (Phase 2); the extension view gets its own polish in Phase 4.
+  // body.className still tracks the real route name so per-mode background
+  // styling keeps working.
+  const CONFIGS = { base: BASE_CONFIG, extension: EXTENSION_CONFIG };
+  let activeConfig = BASE_CONFIG;
+  let renderedConfigId = null; // which config's board the shared SVG shows
 
   function route() {
     const hash = location.hash;
     const name = hash === '#/base' ? 'base' : hash === '#/extension' ? 'extension' : 'landing';
+    const isGenerator = name === 'base' || name === 'extension';
+    const visibleView = isGenerator ? 'base' : name;
     for (const [viewName, el] of Object.entries(VIEWS)) {
-      el.classList.toggle('active', viewName === name);
+      el.classList.toggle('active', viewName === visibleView);
     }
     document.body.className = name;
-    if (name === 'base' && !baseGenerated) {
-      baseGenerated = true;
-      generateAndRender();
+    if (isGenerator) {
+      activeConfig = CONFIGS[name];
+      // Generate lazily on first visit, and regenerate on a mode switch so
+      // the shared view never shows the other config's board. Returning from
+      // the landing page to the same mode keeps the board, as before.
+      if (renderedConfigId !== name) generateAndRender();
     }
   }
 
