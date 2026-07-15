@@ -627,6 +627,9 @@
   const BASE_CONFIG = finalizeBoardConfig({
     id: 'base',
 
+    // Preserve the base generator's existing rejection-sampling budget.
+    maxGenerationAttempts: 5000,
+
     // Axial coordinates for the hexagon-shaped board of radius 2 (19 tiles).
     coords: generateAxialCoords(2),
 
@@ -712,12 +715,14 @@
     },
   });
 
-  // The 5-6 player extension (Phase 2 of 4: board generation only).
-  // Ports are STUBBED (Phase 4 authors the real coastal anchors) and rule caps
-  // are loose PLACEHOLDERS (Phase 3 tunes them from the debug histograms, and
-  // authors the mirror splits for the elongated shape's two axes).
+  // The 5-6 player extension. Ports remain stubbed until Phase 4.
   const EXTENSION_CONFIG = finalizeBoardConfig({
     id: 'extension',
+
+    // The extension's structural rules need a larger pure-rejection budget.
+    // Safe failure prevents an exhausted batch from ever reaching the renderer.
+    maxGenerationAttempts: 50000,
+    safeGenerationFailure: true,
 
     // 30 tiles in 7 rows of 3,4,5,6,5,4,3 (see generateElongatedCoords).
     coords: generateElongatedCoords(),
@@ -744,24 +749,31 @@
     portPositions: [],  // STUB — real 11-port coastal anchors come in Phase 4
     portTypes: [],      // STUB — Phase 4
 
-    mirrorSplits: [],   // STUB — Phase 3 authors the elongated board's axes
+    // The elongated board has two true reflection axes through its pixel-space
+    // center. Tiles on an axis are excluded; the two sides always contain the
+    // same number of fixed positions, and deserts contribute zero pips.
+    mirrorSplits: [
+      { // Horizontal axis: r = 0, 12 positions per side
+        a: [[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[2,-2],[-2,-1],[-1,-1],[0,-1],[1,-1],[2,-1]],
+        b: [[-3,1],[-2,1],[-1,1],[0,1],[1,1],[-3,2],[-2,2],[-1,2],[0,2],[-3,3],[-2,3],[-1,3]],
+      },
+      { // Vertical pixel axis: 2q + r = -1, 13 positions per side
+        a: [[0,-3],[-1,-2],[0,-2],[-2,-1],[-1,-1],[-3,0],[-2,0],[-1,0],[-3,1],[-2,1],[-3,2],[-2,2],[-3,3]],
+        b: [[2,-3],[1,-2],[2,-2],[1,-1],[2,-1],[0,0],[1,0],[2,0],[0,1],[1,1],[-1,2],[0,2],[-1,3]],
+      },
+    ],
 
     // Sized like the base viewBox (same sea/port padding proportions) around
     // the 623.5x660 island, whose center sits at x ~= -51.96 (see
     // generateElongatedCoords). Phase 4 may adjust once real ports land.
     viewBox: '-532 -450 960 900',
 
-    // PLACEHOLDERS — deliberately non-binding so untuned generation succeeds;
-    // Phase 3 replaces these with values read off the debug histograms. They
-    // must stay non-binding because the two structural rules already reject
-    // hard here (raw-board pass rates: no-adjacent-duplicates ~1% with eight
-    // number-triples, no-adjacent-reds ~3% with six red tokens), so any cap
-    // pressure on top pushes the sampler into its 5000-attempt ceiling.
+    // Extension-specific balance caps, tuned from raw-board distributions.
     ruleCaps: {
-      maxPipGap: 20,      // measured: never binds (~17.6 mean pips/resource)
-      maxHalfPipDiff: 99, // moot while mirrorSplits is empty (rule passes trivially)
-      maxSettlementPips: 15, // = the 3-tile corner maximum, so never binds
-      maxResourceBlob: 6,    // = the largest resource count, so never binds
+      maxPipGap: 14,         // rejects about 3.0% of raw boards
+      maxHalfPipDiff: 18,    // largest of two axes rejects about 3.0%
+      maxSettlementPips: 14, // formal cap; 15 would reject nothing
+      maxResourceBlob: 5,    // rejects about 3.2% of raw boards
     },
   });
 
@@ -927,18 +939,23 @@
     return activeRules.every(rule => rule.check(tiles, config));
   }
 
-  const MAX_GENERATION_ATTEMPTS = 5000;
-
-  // Rejection sampling: keep generating until a board passes every rule,
-  // falling back to the last attempt if the cap is reached.
+  // Rejection sampling: each config supplies its own attempt budget. The base
+  // keeps its established last-board fallback. Safe configs return null on
+  // exhaustion so an invalid board can never reach the renderer.
   function generateValidBoard(activeRules, config) {
     let board;
-    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+    for (let attempt = 0; attempt < config.maxGenerationAttempts; attempt++) {
       board = buildBoard(config);
       if (isValidBoard(board, activeRules, config)) return board;
     }
+    if (config.safeGenerationFailure) {
+      console.warn(
+        `No valid ${config.id} board found in ${config.maxGenerationAttempts} attempts; keeping previous valid board.`
+      );
+      return null;
+    }
     console.warn(
-      `No valid board found in ${MAX_GENERATION_ATTEMPTS} attempts; rendering last board.`
+      `No valid board found in ${config.maxGenerationAttempts} attempts; rendering last board.`
     );
     return board;
   }
@@ -1175,7 +1192,9 @@
       rule => document.getElementById(`rule-${rule.id}`).checked
     );
     const config = activeConfig; // set by the router: base or extension
-    renderBoard(generateValidBoard(activeRules, config), generatePorts(config), config);
+    const board = generateValidBoard(activeRules, config);
+    if (board === null) return;
+    renderBoard(board, generatePorts(config), config);
     renderedConfigId = config.id;
   }
 
